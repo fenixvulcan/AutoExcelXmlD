@@ -11,6 +11,9 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Xml;
+using System.Xml.Linq;
+using System.Xml.XPath;
 
 namespace pru2
 {
@@ -34,12 +37,12 @@ namespace pru2
 
                 if (result == DialogResult.OK) // Test result.
                 {
-                    List<returnData> lst = new List<returnData>();
+                    List<ReturnData> lst = new List<ReturnData>();
                     foreach (var item in ws1.Rows())
                     {
 
 
-                        returnData data = new returnData();
+                        ReturnData data = new ReturnData();
                         data.CondicionXPATH = new List<string>();
 
                         var campo = item.Cell(2).Value;
@@ -60,10 +63,10 @@ namespace pru2
                         var xpathGnral = item.Cell(12).Value.ToString();
                         data.XPATH = $"{(string.IsNullOrEmpty(textBox2.Text) ? "/" : textBox2.Text)}{xpathGnral.Substring(1)}";
                         foreach (var det in lines)
-                        { 
+                        {
                             var obj = det.Replace("\r", "");
                             switch (obj)
-                            { 
+                            {
                                 case string g when g.Contains("numeral"):
                                     data.Tipo = "En lista";
                                     data.CondicionXPATH.Add($"{textBox2.Text}{xpath}");
@@ -137,11 +140,11 @@ namespace pru2
                             string line = $"new-dian-ubl21,{g},{d},true,Edm.Boolean,false,Edm.Boolean,new-dian-ubl21,Edm.String," +
                                           $"{d},Edm.DateTime,ldcolmenares@indracompany.com,Edm.String,false,Edm.Boolean,{item.Descripcion?.Replace(",", " ")}," +
                                           $"Edm.String,96,Edm.String,{item.Codigo},Edm.String,{item.MensajeError.Replace(",", " ")},Edm.String," +
-                                          $"{item.Mandatorio},Edm.Boolean,{item.Descripcion?.Replace(",", " ")},Edm.String,0,Edm.Int32,{g},Edm.Guid,"+
+                                          $"{item.Mandatorio},Edm.Boolean,{item.Descripcion?.Replace(",", " ")},Edm.String,0,Edm.Int32,{g},Edm.Guid," +
                                           $"0,Edm.Int32,,,{d},Edm.DateTime,ldcolmenares@indracompany.com,Edm.String" +
                                           $",{data}" +
                                           $",Edm.String,{item.XPATH},Edm.String";
-                            csv.AppendLine(line); 
+                            csv.AppendLine(line);
                         }
                     }
                     File.WriteAllText($"{file}Result.csv", csv.ToString(), Encoding.Default);
@@ -157,9 +160,53 @@ namespace pru2
                 MessageBox.Show($"{ ex.Message}  {line.ToString()}");
             }
         }
+
+        private void button2_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var data = JsonConvert.DeserializeObject<List<ReturnData>>(textBox1.Text);
+                var openFileDialog1 = new System.Windows.Forms.OpenFileDialog();
+                var result = openFileDialog1.ShowDialog();
+                string file = openFileDialog1.FileName;
+
+
+
+                var docNav = XDocument.Load(file);
+                XNamespace dc = "http://www.w3.org/2000/09/xmldsig#";
+                XNamespace dc1 = "http://purl.org/dc/elements/1.1/";
+                XNamespace dc2s = "urn:oasis:names:specification:ubl:schema:xsd:CommonExtensionComponents-2";
+                var nav = docNav.CreateNavigator();
+                nav.SelectSingleNode("ApplicationResponse");
+                foreach (var item in data)
+                {
+                    if (item.Tipo != "En lista")
+                    {
+
+                        item.valXPATH = (bool)nav.Evaluate(item.XPATH);
+                        var det = $"\"{item.CondicionXPATH.Aggregate((s, s1) => s + " AND " + s1).ToString()} \"";
+                        item.valCondicionXPATH = (bool)nav.Evaluate(det);
+                    }
+                    else
+                    {
+
+                        item.valXPATH = (bool)nav.Evaluate($"exists({item.XPATH})");
+                    }
+                }
+                textBox1.Text = JsonConvert.SerializeObject(data);
+            }
+            catch (Exception ex)
+            {
+
+                var st = new StackTrace(ex, true);
+                var frame = st.GetFrame(0);
+                var line = frame.GetFileLineNumber();
+                MessageBox.Show($"{ ex.Message}  {line.ToString()}");
+            }
+        }
     }
 
-    public class returnData
+    public class ReturnData
     {
         public string Nombre { get; set; }
         public string Descripcion { get; set; }
@@ -170,6 +217,8 @@ namespace pru2
         public string XPATH { get; set; }
         public List<string> CondicionXPATH { get; set; }
         public string Tipo { get; set; }
+        public bool valXPATH { get; set; }
+        public bool valCondicionXPATH { get; set; }
 
     }
 }
